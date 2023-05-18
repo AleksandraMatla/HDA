@@ -1,0 +1,252 @@
+%% Load files
+folderPath = 'raw_accelerometry_data';  % Specify the folder path
+filenameListFile = 'participant_demog.csv';  % Name of the file containing the filenames
+
+% Read the file with filenames
+filenameTable = readtable(fullfile(folderPath, filenameListFile));
+
+% Extract the filenames from the first column
+fileNames = filenameTable{:, 1};
+
+numFiles = numel(fileNames);  % Get the number of files
+
+A = zeros(numFiles, 3);  % Initialize the result matrix
+
+for i = 1:numFiles
+    filePath = fullfile(folderPath, fileNames{i});  % Create the full file path
+    
+    % Load the data from the file
+    data = readtable(filePath);
+    
+    % Perform calculations on the loaded data
+    Array = table2array(data);
+    Walking = sum(Array(:, 1) == 1);
+    Stairs_up = sum(Array(:, 1) == 3);
+    Stairs_down = sum(Array(:, 1) == 2);
+    
+    A(i, :) = [Walking, Stairs_up, Stairs_down];
+end
+
+%% Plot the results
+X = categorical({'Walking','Stairs up', 'Stairs down'});
+X = reordercats(X, {'Walking', 'Stairs up', 'Stairs down'});
+bar(X, A)
+hold on;
+
+%% Initialize arrays to store time and action values
+time = cell(numFiles, 1);
+actions = cell(numFiles, 1);
+
+%%
+%{
+for i = 1:numFiles
+    filePath = fullfile(folderPath, fileNames{i});  % Create the full file path
+    
+    % Load the data from the file
+    data = readtable(filePath);
+    
+    % Extract time and action columns from the data
+    time = data.time_s;  
+    actions = data.activity;
+    
+    % Plot the actions versus time for the current file
+    figure;
+    scatter(time, actions, 'filled', 'MarkerFaceColor', 'k', 'MarkerEdgeColor', 'k', 'Marker', '.');
+    
+    % Set plot title and labels
+    title(['Actions vs. Time - File: ', fileNames{i}]);
+    legend('1 - Walking', '2 - Stairs down', '3 - Stairs up');
+
+    % Set y-axis limits
+    ylim([0 3]);
+    xlabel('Time');
+    ylabel('Action');
+
+end
+hold off;
+
+%}
+%%
+%{
+for i = 1:3
+    filePath = fullfile(folderPath, fileNames{i});  % Create the full file path
+    
+    % Load the data from the file
+    data = readtable(filePath);
+    
+    % Extract time and action columns from the data
+    time = data.time_s;  
+    actions = data.activity;
+    
+    % Plot the actions versus time for the current file
+    figure;
+    scatter(time, actions, 'filled', 'MarkerFaceColor', 'k', 'MarkerEdgeColor', 'k', 'Marker', '.');
+    
+    % Set plot title and labels
+    title(['Actions vs. Time - File: ', fileNames{i}]);
+    legend('1 - Walking, 2 - Stairs down, 3 - Stairs up');
+
+    % Set y-axis limits
+    ylim([0 3]);
+    xlabel('Time');
+    ylabel('Action');
+
+end
+%}
+
+
+%%
+% Define the columns to extract
+columns = {'lw', 'lh', 'la', 'ra'};
+axis_labels = {'x', 'y', 'z'};
+
+% Create the subplots
+figure;
+
+for i = 1:3
+    filePath = fullfile(folderPath, fileNames{i});  % Create the full file path
+
+    % Load the data from the file
+    data = readtable(filePath);
+
+    % Extract time column from the data
+    time = data.time_s;
+
+    % Iterate over the desired columns and create the scatter plots
+    for j = 1:numel(columns)
+        subplot(2, 2, j);
+        
+        % Extract the columns for the current axis (X, Y, Z)
+        col_xyz = cellfun(@(axis) data.(sprintf('%s_%s', columns{j}, axis)), axis_labels, 'UniformOutput', false);
+        
+        % Combine the columns into a single matrix
+        XYZ = cat(2, col_xyz{:});
+        
+        % Create a 3D time matrix for scatter plot
+        time_3 = repmat(time, 1, 3);
+        
+        % Plot the scatter
+        scatter(time_3, XYZ, '.');
+        
+        % Set axis labels
+        xlabel('Time');
+        ylabel(sprintf('%s Axis', columns{j}));
+    end
+end
+
+
+
+%% Normalization
+% Initialize an empty cell array to store the normalized tables
+normalizedTables = cell(32, 1);
+
+for fileIndex = 1:32
+    filePath = fullfile(folderPath, fileNames{i});  % Create the full file path
+
+    % Load the data from the file
+    data = readtable(filePath);
+
+    % Create a new table to store the normalized columns
+    normalizedTable = table();
+
+ % Normalize each column in the table
+    columnNames = data.Properties.VariableNames;
+    for colIndex = 3:numel(columnNames)
+        colName = columnNames{colIndex};
+        normalizedColName = ['Normalized' colName];
+        normalizedTable.(normalizedColName) = normalize(data.(colName));
+    end
+    
+    % Store the normalized table in the cell array
+    normalizedTables{fileIndex} = normalizedTable;
+end
+
+%% Framing
+
+% Initialize an empty cell array to store the framed data
+framedData = cell(32, 1);
+
+% Define the frame size and overlap
+frameSize = 100;   % Specify the frame size (number of rows per frame)
+overlap = 50;      % Specify the overlap (number of overlapping rows between frames)
+
+for fileIndex = 1:32
+% Perform framing on the normalized table
+    numFrames = floor((size(normalizedTable, 1) - frameSize) / overlap) + 1;
+    frames = cell(numFrames, 1);
+    for frameIndex = 1:numFrames
+        startRow = (frameIndex - 1) * overlap + 1;
+        endRow = startRow + frameSize - 1;
+        frames{frameIndex} = normalizedTable(startRow:endRow, :);
+    end
+    
+    % Store the framed data in the cell array
+    framedData{fileIndex} = frames;
+end
+
+
+
+%% train and test data 
+
+numClasses = 3;  % Specify the number of classes in your dataset
+
+% Concatenate all the framed data into a single matrix
+data = cat(4, framedData{:});
+numFrames = size(data, 4);
+labels = repmat((1:numClasses)', numFrames/numClasses, 1);
+
+% Randomly shuffle the data
+idx = randperm(numFrames);
+shuffledData = data(:, :, :, idx);
+shuffledLabels = labels(idx);
+
+% Split the data into train and test sets
+trainRatio = 0.8;  % Specify the ratio of training data
+numTrain = round(trainRatio * numFrames);
+trainData = shuffledData(:, :, :, 1:numTrain);
+trainLabels = shuffledLabels(1:numTrain);
+testData = shuffledData(:, :, :, numTrain+1:end);
+testLabels = shuffledLabels(numTrain+1:end);
+
+
+
+%% CNN classifier
+
+% Define the CNN architecture
+layers = [
+    imageInputLayer([frameSize 12 1])     % Specify the input layer size based on the frame size and number of columns (12)
+    convolution2dLayer(3, 16, 'Padding', 'same')   % Convolutional layer with 16 filters and 3x3 kernel
+    reluLayer()                                   % ReLU activation layer
+    maxPooling2dLayer(2, 'Stride', 2)              % Max pooling layer with 2x2 pool size and stride 2
+    convolution2dLayer(3, 32, 'Padding', 'same')   % Convolutional layer with 32 filters and 3x3 kernel
+    reluLayer()                                   % ReLU activation layer
+    maxPooling2dLayer(2, 'Stride', 2)              % Max pooling layer with 2x2 pool size and stride 2
+    fullyConnectedLayer(64)                        % Fully connected layer with 64 output neurons
+    reluLayer()                                   % ReLU activation layer
+    fullyConnectedLayer(numClasses)                % Fully connected layer with the number of classes as output neurons
+    softmaxLayer()                                % Softmax activation layer
+    classificationLayer()                         % Classification layer
+];
+
+% Set the training options
+options = trainingOptions('adam', ...
+    'MaxEpochs', 10, ...
+    'MiniBatchSize', 64, ...
+    'ValidationFrequency', 10, ...
+    'Plots', 'training-progress', ...
+    'ExecutionEnvironment', 'cpu');  % Use 'gpu' if available, otherwise 'cpu'
+
+
+% Train the CNN
+net = trainNetwork(trainData, categorical(trainLabels), layers, options);
+
+
+% Test the CNN
+predictedLabels = classify(net, testData);
+
+% Evaluate the performance
+accuracy = sum(predictedLabels == testLabels) / numel(testLabels);
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
