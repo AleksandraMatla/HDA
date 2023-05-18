@@ -1,3 +1,5 @@
+LINK TO DONLOAD THE DATASET: https://physionet.org/content/accelerometry-walk-climb-drive/1.0.0/
+
 %% Load files
 folderPath = 'raw_accelerometry_data';  % Specify the folder path
 filenameListFile = 'participant_demog.csv';  % Name of the file containing the filenames
